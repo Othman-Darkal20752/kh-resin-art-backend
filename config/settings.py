@@ -202,11 +202,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 # =========================
 # Storage backends
 # =========================
-# Django 4.2+ uses STORAGES.
-# django-cloudinary-storage still checks legacy DEFAULT_FILE_STORAGE / STATICFILES_STORAGE,
-# so we define both to keep deployment compatible.
+# Use normal static files storage to avoid collectstatic post-processing issues
+# on Render with Django admin vendor files.
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
 if USE_CLOUDINARY:
     DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
@@ -216,7 +215,7 @@ if USE_CLOUDINARY:
             "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
         },
         "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
 else:
@@ -227,7 +226,7 @@ else:
             "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
         "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
 
