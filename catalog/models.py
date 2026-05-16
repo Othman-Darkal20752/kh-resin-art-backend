@@ -1,0 +1,155 @@
+from io import BytesIO
+from pathlib import Path
+
+from django.core.files.base import ContentFile
+from django.db import models
+from django.utils.text import slugify
+from PIL import Image, ImageOps
+
+
+def upload_product_original(instance, filename):
+    return f"products/original/{filename}"
+
+
+def upload_product_display(instance, filename):
+    return f"products/display/{filename}"
+
+
+def make_display_image(uploaded_file, filename, size=(1200, 1200)):
+    """
+    Creates a clean square product image:
+    - fixed warm background
+    - product centered
+    - no cropping
+    - WebP output
+    """
+    background_color = (247, 239, 227, 255)  # warm beige: #F7EFE3
+    padding = 120
+
+    img = Image.open(uploaded_file)
+    img = ImageOps.exif_transpose(img).convert("RGBA")
+
+    max_w = size[0] - padding * 2
+    max_h = size[1] - padding * 2
+    img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+
+    canvas = Image.new("RGBA", size, background_color)
+
+    x = (size[0] - img.width) // 2
+    y = (size[1] - img.height) // 2
+    canvas.alpha_composite(img, (x, y))
+
+    output = BytesIO()
+    canvas.convert("RGB").save(output, format="WEBP", quality=88, method=6)
+
+    base_name = Path(filename).stem
+    return ContentFile(output.getvalue(), name=f"{base_name}_display.webp")
+
+
+class Category(models.Model):
+    name = models.CharField("اسم التصنيف", max_length=120)
+    slug = models.SlugField("الرابط", max_length=140, unique=True, blank=True)
+    description = models.TextField("وصف مختصر", blank=True)
+    is_active = models.BooleanField("ظاهر بالموقع", default=True)
+    order = models.PositiveIntegerField("الترتيب", default=0)
+
+    class Meta:
+        verbose_name = "تصنيف"
+        verbose_name_plural = "التصنيفات"
+        ordering = ["order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            # Arabic slugify may be weak, so fallback is acceptable.
+            self.slug = slugify(self.name, allow_unicode=True)
+        super().save(*args, **kwargs)
+
+
+class Product(models.Model):
+    category = models.ForeignKey(
+        Category,
+        verbose_name="التصنيف",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+    )
+
+    name = models.CharField("اسم المنتج", max_length=160)
+    slug = models.SlugField("الرابط", max_length=180, unique=True, blank=True, allow_unicode=True)
+
+    short_description = models.TextField("وصف مختصر", blank=True)
+
+    main_image = models.ImageField(
+        "الصورة الأصلية",
+        upload_to=upload_product_original,
+        blank=True,
+        null=True,
+    )
+
+    display_image = models.ImageField(
+        "صورة العرض الموحدة",
+        upload_to=upload_product_display,
+        blank=True,
+        null=True,
+        editable=False,
+    )
+
+    is_active = models.BooleanField("ظاهر بالموقع", default=True)
+    is_featured = models.BooleanField("مميز بالصفحة الرئيسية", default=False)
+    order = models.PositiveIntegerField("الترتيب", default=0)
+
+    created_at = models.DateTimeField("تاريخ الإضافة", auto_now_add=True)
+    updated_at = models.DateTimeField("آخر تعديل", auto_now=True)
+
+    class Meta:
+        verbose_name = "منتج"
+        verbose_name_plural = "المنتجات"
+        ordering = ["order", "-created_at"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        old_image = None
+
+        if self.pk:
+            old = Product.objects.filter(pk=self.pk).first()
+            if old:
+                old_image = old.main_image
+
+        image_changed = self.main_image and self.main_image != old_image
+
+        if not self.slug:
+            self.slug = slugify(self.name, allow_unicode=True)
+
+        if image_changed:
+            self.display_image = make_display_image(
+                self.main_image,
+                self.main_image.name,
+            )
+
+        super().save(*args, **kwargs)
+
+
+class ProductImage(models.Model):
+    product = models.ForeignKey(
+        Product,
+        verbose_name="المنتج",
+        on_delete=models.CASCADE,
+        related_name="gallery",
+    )
+    image = models.ImageField("صورة إضافية", upload_to="products/gallery/")
+    alt_text = models.CharField("نص بديل", max_length=160, blank=True)
+    order = models.PositiveIntegerField("الترتيب", default=0)
+
+    class Meta:
+        verbose_name = "صورة منتج"
+        verbose_name_plural = "صور المنتجات"
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"صورة - {self.product.name}"
