@@ -69,6 +69,9 @@ class ProductAdmin(admin.ModelAdmin):
     )
 
     def image_preview(self, obj):
+        if not obj:
+            return "لا توجد صورة"
+
         image = obj.display_image or obj.main_image
         if image:
             return format_html(
@@ -80,7 +83,7 @@ class ProductAdmin(admin.ModelAdmin):
     image_preview.short_description = "الصورة"
 
     def display_preview(self, obj):
-        if obj.display_image:
+        if obj and obj.display_image:
             return format_html(
                 '<img src="{}" style="max-width:260px;max-height:260px;object-fit:contain;border-radius:16px;background:#f7efe3;padding:10px;" />',
                 obj.display_image.url,
@@ -94,3 +97,10 @@ class ProductAdmin(admin.ModelAdmin):
         if request.user.is_superuser:
             return True
         return False
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ("product", "alt_text", "order")
+    list_editable = ("order",)
+    search_fields = ("product__name", "alt_text")

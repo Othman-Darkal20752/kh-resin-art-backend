@@ -75,7 +75,6 @@ INSTALLED_APPS = []
 
 if USE_CLOUDINARY:
     INSTALLED_APPS += [
-        "cloudinary_storage",
         "cloudinary",
     ]
 
@@ -202,10 +201,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 # =========================
 # Storage backends
 # =========================
-# Use normal static files storage to avoid collectstatic post-processing issues
-# on Render with Django admin vendor files.
+# Cloudinary handles uploaded media files.
+# WhiteNoise serves collected static files such as Django admin CSS on Render.
 
-STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 if USE_CLOUDINARY:
     DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
@@ -215,7 +214,7 @@ if USE_CLOUDINARY:
             "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
         },
         "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
         },
     }
 else:
@@ -226,9 +225,11 @@ else:
             "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
         "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
         },
     }
+
+WHITENOISE_ROOT = STATIC_ROOT
 
 # =========================
 # Django REST Framework
@@ -285,24 +286,3 @@ if not DEBUG:
 # =========================
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# =========================
-# Logging
-# =========================
-
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-        },
-    },
-    "loggers": {
-        "django.request": {
-            "handlers": ["console"],
-            "level": "ERROR",
-            "propagate": True,
-        },
-    },
-}

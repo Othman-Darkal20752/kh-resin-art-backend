@@ -15,6 +15,17 @@ def upload_product_display(instance, filename):
     return f"products/display/{filename}"
 
 
+def reset_file_pointer(file_obj):
+    """
+    Reset uploaded file pointer so the same file can be processed by PIL
+    and then uploaded by the configured Django storage backend.
+    """
+    try:
+        file_obj.seek(0)
+    except Exception:
+        pass
+
+
 def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     """
     Creates a clean square product image:
@@ -25,6 +36,8 @@ def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     """
     background_color = (247, 239, 227, 255)  # warm beige: #F7EFE3
     padding = 120
+
+    reset_file_pointer(uploaded_file)
 
     img = Image.open(uploaded_file)
     img = ImageOps.exif_transpose(img).convert("RGBA")
@@ -41,6 +54,10 @@ def make_display_image(uploaded_file, filename, size=(1200, 1200)):
 
     output = BytesIO()
     canvas.convert("RGB").save(output, format="WEBP", quality=88, method=6)
+
+    # Important: PIL consumes the original uploaded file.
+    # Reset it so Cloudinary receives the full original file, not an empty stream.
+    reset_file_pointer(uploaded_file)
 
     base_name = Path(filename).stem
     return ContentFile(output.getvalue(), name=f"{base_name}_display.webp")
@@ -114,14 +131,22 @@ class Product(models.Model):
         return self.name
 
     def save(self, *args, **kwargs):
-        old_image = None
+        old_image_name = None
 
         if self.pk:
             old = Product.objects.filter(pk=self.pk).first()
-            if old:
-                old_image = old.main_image
+            if old and old.main_image:
+                old_image_name = old.main_image.name
 
-        image_changed = self.main_image and self.main_image != old_image
+        current_image_name = self.main_image.name if self.main_image else None
+
+        image_changed = bool(
+            self.main_image
+            and (
+                not getattr(self.main_image, "_committed", True)
+                or current_image_name != old_image_name
+            )
+        )
 
         if not self.slug:
             self.slug = slugify(self.name, allow_unicode=True)
@@ -131,6 +156,7 @@ class Product(models.Model):
                 self.main_image,
                 self.main_image.name,
             )
+            reset_file_pointer(self.main_image)
 
         super().save(*args, **kwargs)
 
