@@ -30,11 +30,24 @@ def reset_file_pointer(file_obj):
 _REMBG_SESSION = None
 
 
+def ai_image_processing_enabled():
+    """
+    Enable rembg only when explicitly requested.
+    Keep this disabled on Render Free to avoid Gunicorn timeout/OOM.
+    Accepted true values: true, 1, yes, on.
+    """
+    return os.getenv("ENABLE_AI_IMAGE_PROCESSING", "False").strip().lower() in {
+        "true",
+        "1",
+        "yes",
+        "on",
+    }
+
+
 def get_rembg_session():
     """
     Create rembg session once per running server process.
-    u2netp is lighter and better for Render Free.
-    Later, you can try: isnet-general-use
+    This function is called only when ENABLE_AI_IMAGE_PROCESSING=True.
     """
     global _REMBG_SESSION
 
@@ -49,14 +62,20 @@ def get_rembg_session():
 
 def remove_background_safely(img):
     """
-    Try to remove background with rembg.
-    If rembg fails for any reason, return the original image
-    so the admin save does not crash.
+    Remove background only when AI processing is enabled.
+    When disabled, return the original RGBA image so product saving stays fast and stable.
     """
+    if not ai_image_processing_enabled():
+        return img.convert("RGBA")
+
     try:
         from rembg import remove
 
-        output = remove(img, session=get_rembg_session())
+        # Reduce image before rembg to lower CPU/RAM usage.
+        ai_img = img.copy()
+        ai_img.thumbnail((900, 900), Image.Resampling.LANCZOS)
+
+        output = remove(ai_img, session=get_rembg_session())
 
         if isinstance(output, Image.Image):
             return output.convert("RGBA")
@@ -79,32 +98,32 @@ def has_transparency(img):
 def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     """
     Creates a clean square product image:
-    - removes background using rembg
-    - places product on white background
+    - optionally removes background using rembg if ENABLE_AI_IMAGE_PROCESSING=True
+    - places product on a fixed warm background
     - centers product
     - adds consistent padding
-    - adds subtle shadow only if background was removed
+    - adds subtle shadow only if the image has transparency
     - exports WebP
     """
-    background_color = (255, 255, 255, 255)
-    padding = 130
+    background_color = (247, 239, 227, 255)  # warm beige: #F7EFE3
+    padding = 120
 
     reset_file_pointer(uploaded_file)
 
     img = Image.open(uploaded_file)
     img = ImageOps.exif_transpose(img).convert("RGBA")
 
-    # Remove background with AI
+    # AI background removal is disabled by default on Render Free.
     img = remove_background_safely(img)
 
-    # Crop transparent empty space around product
+    # Crop transparent empty space around product if AI/transparent PNG produced it.
     bbox = img.getbbox()
     if bbox:
         img = img.crop(bbox)
 
     transparent_result = has_transparency(img)
 
-    # Resize product without cropping
+    # Resize product without cropping.
     max_w = size[0] - padding * 2
     max_h = size[1] - padding * 2
     img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
@@ -114,27 +133,24 @@ def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     x = (size[0] - img.width) // 2
     y = (size[1] - img.height) // 2
 
-    # Add soft shadow only when the product has transparent background
+    # Add soft shadow only when image has transparency.
     if transparent_result:
         alpha = img.getchannel("A")
-
         shadow = Image.new("RGBA", img.size, (0, 0, 0, 70))
         shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(18)))
-
-        shadow_x = x + 14
-        shadow_y = y + 20
-        canvas.alpha_composite(shadow, (shadow_x, shadow_y))
+        canvas.alpha_composite(shadow, (x + 14, y + 20))
 
     canvas.alpha_composite(img, (x, y))
 
     output = BytesIO()
-    canvas.convert("RGB").save(output, format="WEBP", quality=90, method=6)
+    canvas.convert("RGB").save(output, format="WEBP", quality=88, method=6)
 
-    # Important: reset original file so Cloudinary receives it correctly
+    # Important: reset original file so Cloudinary receives it correctly.
     reset_file_pointer(uploaded_file)
 
     base_name = Path(filename).stem
     return ContentFile(output.getvalue(), name=f"{base_name}_display.webp")
+
 
 class Category(models.Model):
     name = models.CharField("اسم التصنيف", max_length=120)
