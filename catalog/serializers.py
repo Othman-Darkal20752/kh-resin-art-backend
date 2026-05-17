@@ -42,6 +42,8 @@ class ProductListSerializer(serializers.ModelSerializer):
             "order",
             "created_at",
             "updated_at",
+            "colors_note",
+            "customization_note",
         ]
 
     def get_category_slug(self, obj):

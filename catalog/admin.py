@@ -41,7 +41,7 @@ class ProductAdmin(admin.ModelAdmin):
 
     list_editable = ("is_active", "is_featured", "order")
     list_filter = ("category", "is_active", "is_featured")
-    search_fields = ("name", "short_description")
+    search_fields = ("name", "short_description", "colors_note", "customization_note")
     readonly_fields = ("display_preview",)
 
     fieldsets = (
@@ -50,6 +50,16 @@ class ProductAdmin(admin.ModelAdmin):
                 "name",
                 "category",
                 "short_description",
+            )
+        }),
+        ("تفاصيل تظهر في صفحة المنتج", {
+            "fields": (
+                "colors_note",
+                "customization_note",
+            ),
+            "description": (
+                "هذه المعلومات تظهر للزبونة داخل صفحة تفاصيل المنتج. "
+                "اتركي الحقل فارغًا إذا لم يكن هناك تفاصيل خاصة."
             )
         }),
         ("صورة المنتج", {

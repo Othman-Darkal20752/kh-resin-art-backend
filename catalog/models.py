@@ -110,6 +110,19 @@ class Product(models.Model):
         null=True,
     )
 
+    colors_note = models.CharField(
+        "الألوان",
+        max_length=255,
+        blank=True,
+        default="",
+    )
+
+    customization_note = models.TextField(
+        "التخصيص",
+        blank=True,
+        default="",
+    )
+
     display_image = models.ImageField(
         "صورة العرض الموحدة",
         upload_to=upload_product_display,
