@@ -1,10 +1,11 @@
+import os
 from io import BytesIO
 from pathlib import Path
 
 from django.core.files.base import ContentFile
 from django.db import models
 from django.utils.text import slugify
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 
 
 def upload_product_original(instance, filename):
@@ -17,7 +18,7 @@ def upload_product_display(instance, filename):
 
 def reset_file_pointer(file_obj):
     """
-    Reset uploaded file pointer so the same file can be processed by PIL
+    Reset uploaded file pointer so the same file can be processed by PIL/rembg
     and then uploaded by the configured Django storage backend.
     """
     try:
@@ -26,22 +27,84 @@ def reset_file_pointer(file_obj):
         pass
 
 
+_REMBG_SESSION = None
+
+
+def get_rembg_session():
+    """
+    Create rembg session once per running server process.
+    u2netp is lighter and better for Render Free.
+    Later, you can try: isnet-general-use
+    """
+    global _REMBG_SESSION
+
+    if _REMBG_SESSION is None:
+        from rembg import new_session
+
+        model_name = os.getenv("REMBG_MODEL", "u2netp")
+        _REMBG_SESSION = new_session(model_name)
+
+    return _REMBG_SESSION
+
+
+def remove_background_safely(img):
+    """
+    Try to remove background with rembg.
+    If rembg fails for any reason, return the original image
+    so the admin save does not crash.
+    """
+    try:
+        from rembg import remove
+
+        output = remove(img, session=get_rembg_session())
+
+        if isinstance(output, Image.Image):
+            return output.convert("RGBA")
+
+        return Image.open(BytesIO(output)).convert("RGBA")
+
+    except Exception as exc:
+        print(f"[image-processing] rembg failed, fallback to original image: {exc}")
+        return img.convert("RGBA")
+
+
+def has_transparency(img):
+    try:
+        alpha = img.getchannel("A")
+        return alpha.getextrema()[0] < 255
+    except Exception:
+        return False
+
+
 def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     """
     Creates a clean square product image:
-    - fixed warm background
-    - product centered
-    - no cropping
-    - WebP output
+    - removes background using rembg
+    - places product on white background
+    - centers product
+    - adds consistent padding
+    - adds subtle shadow only if background was removed
+    - exports WebP
     """
-    background_color = (247, 239, 227, 255)  # warm beige: #F7EFE3
-    padding = 120
+    background_color = (255, 255, 255, 255)
+    padding = 130
 
     reset_file_pointer(uploaded_file)
 
     img = Image.open(uploaded_file)
     img = ImageOps.exif_transpose(img).convert("RGBA")
 
+    # Remove background with AI
+    img = remove_background_safely(img)
+
+    # Crop transparent empty space around product
+    bbox = img.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+
+    transparent_result = has_transparency(img)
+
+    # Resize product without cropping
     max_w = size[0] - padding * 2
     max_h = size[1] - padding * 2
     img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
@@ -50,18 +113,28 @@ def make_display_image(uploaded_file, filename, size=(1200, 1200)):
 
     x = (size[0] - img.width) // 2
     y = (size[1] - img.height) // 2
+
+    # Add soft shadow only when the product has transparent background
+    if transparent_result:
+        alpha = img.getchannel("A")
+
+        shadow = Image.new("RGBA", img.size, (0, 0, 0, 70))
+        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(18)))
+
+        shadow_x = x + 14
+        shadow_y = y + 20
+        canvas.alpha_composite(shadow, (shadow_x, shadow_y))
+
     canvas.alpha_composite(img, (x, y))
 
     output = BytesIO()
-    canvas.convert("RGB").save(output, format="WEBP", quality=88, method=6)
+    canvas.convert("RGB").save(output, format="WEBP", quality=90, method=6)
 
-    # Important: PIL consumes the original uploaded file.
-    # Reset it so Cloudinary receives the full original file, not an empty stream.
+    # Important: reset original file so Cloudinary receives it correctly
     reset_file_pointer(uploaded_file)
 
     base_name = Path(filename).stem
     return ContentFile(output.getvalue(), name=f"{base_name}_display.webp")
-
 
 class Category(models.Model):
     name = models.CharField("اسم التصنيف", max_length=120)
