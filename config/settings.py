@@ -75,7 +75,6 @@ INSTALLED_APPS = []
 
 if USE_CLOUDINARY:
     INSTALLED_APPS += [
-        "cloudinary_storage",
         "cloudinary",
     ]
 
