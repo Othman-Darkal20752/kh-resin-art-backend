@@ -24,6 +24,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
+    category_slug = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -35,10 +36,18 @@ class ProductListSerializer(serializers.ModelSerializer):
             "short_description",
             "category",
             "category_name",
+            "category_slug",
             "image_url",
             "is_featured",
             "order",
+            "created_at",
+            "updated_at",
         ]
+
+    def get_category_slug(self, obj):
+        if obj.category:
+            return obj.category.slug
+        return None
 
     def get_image_url(self, obj):
         request = self.context.get("request")
@@ -56,6 +65,4 @@ class ProductDetailSerializer(ProductListSerializer):
     class Meta(ProductListSerializer.Meta):
         fields = ProductListSerializer.Meta.fields + [
             "gallery",
-            "created_at",
-            "updated_at",
         ]
