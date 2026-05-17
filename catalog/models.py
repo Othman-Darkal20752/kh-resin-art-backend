@@ -26,6 +26,33 @@ def reset_file_pointer(file_obj):
         pass
 
 
+def generate_unique_slug(model_class, value, instance_pk=None, fallback="item", max_length=180):
+    """
+    Generate a unique slug for a model.
+
+    This allows multiple products/categories to have the same visible name,
+    while keeping the slug unique in the database.
+    Example:
+        بورتوكليه
+        بورتوكليه-2
+        بورتوكليه-3
+    """
+    base_slug = slugify(value, allow_unicode=True) or fallback
+    base_slug = base_slug.strip("-") or fallback
+    base_slug = base_slug[:max_length].strip("-") or fallback
+
+    slug = base_slug
+    counter = 2
+
+    while model_class.objects.filter(slug=slug).exclude(pk=instance_pk).exists():
+        suffix = f"-{counter}"
+        available_length = max_length - len(suffix)
+        slug = f"{base_slug[:available_length].rstrip('-')}{suffix}"
+        counter += 1
+
+    return slug
+
+
 def make_display_image(uploaded_file, filename, size=(1200, 1200)):
     """
     Creates a clean square product image:
@@ -83,8 +110,22 @@ class Category(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            # Arabic slugify may be weak, so fallback is acceptable.
-            self.slug = slugify(self.name, allow_unicode=True)
+            self.slug = generate_unique_slug(
+                Category,
+                self.name,
+                instance_pk=self.pk,
+                fallback="category",
+                max_length=140,
+            )
+        else:
+            self.slug = generate_unique_slug(
+                Category,
+                self.slug,
+                instance_pk=self.pk,
+                fallback="category",
+                max_length=140,
+            )
+
         super().save(*args, **kwargs)
 
 
@@ -165,7 +206,21 @@ class Product(models.Model):
         )
 
         if not self.slug:
-            self.slug = slugify(self.name, allow_unicode=True)
+            self.slug = generate_unique_slug(
+                Product,
+                self.name,
+                instance_pk=self.pk,
+                fallback="product",
+                max_length=180,
+            )
+        else:
+            self.slug = generate_unique_slug(
+                Product,
+                self.slug,
+                instance_pk=self.pk,
+                fallback="product",
+                max_length=180,
+            )
 
         if image_changed:
             self.display_image = make_display_image(
