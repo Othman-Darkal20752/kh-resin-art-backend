@@ -202,26 +202,31 @@ MEDIA_ROOT = BASE_DIR / "media"
 # =========================
 # Storage backends
 # =========================
-# Django 5 uses STORAGES.
-# Media files: Cloudinary on Render when env vars exist, local /media otherwise.
-# Static files: WhiteNoise serves collected admin/static files on Render.
+# Use normal static files storage to avoid collectstatic post-processing issues
+# on Render with Django admin vendor files.
+
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
 if USE_CLOUDINARY:
+    DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+
     STORAGES = {
         "default": {
             "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
         },
         "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
 else:
+    DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
+
     STORAGES = {
         "default": {
             "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
         "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
 
@@ -276,9 +281,14 @@ if not DEBUG:
 
 
 # =========================
+# Default primary key
+# =========================
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# =========================
 # Logging
 # =========================
-# Show real 500 errors in Render logs instead of only access logs.
 
 LOGGING = {
     "version": 1,
@@ -296,10 +306,3 @@ LOGGING = {
         },
     },
 }
-
-
-# =========================
-# Default primary key
-# =========================
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
